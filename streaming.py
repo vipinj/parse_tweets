@@ -1,6 +1,9 @@
 from tweepy.streaming import StreamListener
 from tweepy import OAuthHandler
 from tweepy import Stream
+import sys
+
+dump_to_file = sys.argv[1]
 
 # Go to http://dev.twitter.com and create an app. 
 # The consumer key and secret will be generated for you after
@@ -18,9 +21,9 @@ class StdOutListener(StreamListener):
 
 	"""
 	def on_data(self, data):
-		f = open("day1_op",'a')
+		f = open(dump_to_file,'a')
 		f.write("%s" %data)
-		# print data
+		print data
 		f.close()
 		return True
 

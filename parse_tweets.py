@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+__author__ = "vjain@cs.nyu.edu(Vipin Jain)"
+
 import sys
 import json
 # import unicode
@@ -13,14 +15,11 @@ def main():
         count += 1 
         temp =  json.loads(line)
         if "text" in temp:
-            # print temp["text"]
             op_file.write("%s\n" %temp["text"].encode('utf8'))
         else:
             pass
         if count % 1000 == 0:
             print count
-        # for c in temp:
-        #     print ord(c)
         
     tweet_file.close()
     op_file.close()
