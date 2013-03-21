@@ -1,1 +1,2 @@
-POC code for investigating Twitter feed and the quality of url's it contains.
+1. POC code for investigating Twitter feed and the quality of url's it contains.
+2. Run the sqlfile as psql -h localhost -U vjain -d database -f sqlfile 
