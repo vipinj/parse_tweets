@@ -1,2 +1,16 @@
 1. POC code for investigating Twitter feed and the quality of url's it contains.
 2. Run the sqlfile as psql -h localhost -U vjain -d database -f sqlfile 
+
+Process:
+
+0. Collect raw tweet dump data from streaming.py
+
+1. Pass the raw tweet dump to parse_twitter.py  ( Extracts creation date, 
+   twit_url, exp_url, geo coods(if any)
+   python parse_twitter.py tweet_dump url_file 
+   
+2. Pass the dump file to redirect.py which inputs the tweet dump file
+   and outputs the jsonfile with redirection list
+
+3. 
+    
