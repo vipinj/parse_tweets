@@ -24,6 +24,13 @@ class BatchInput(object):
                     columns=('creation_tstamp', 'exp_url', 'tco_url',
                              'num_redir', 'coordinates', 'redir_list' ))
       conn.commit()
+      
+   def run_urls(self, conn):
+      cur = conn.cursor()
+      cur.copy_from(self.dfile, 'urls', sep=' ',
+                    columns=('exp_url', 'resolved', ))
+      conn.commit()
+         
             
 def convert_timestr(date_str):
     """ Twitter's date rep is like this
@@ -39,7 +46,7 @@ def convert_timestr(date_str):
     return calendar.timegm(t_stamp)
 
 
-class ConvertInput(object):
+class CovertInput(object):
    ''' converts the json object file to \t delimited file with the following
    changes
    1. concatenates the list with # as the separator
@@ -96,8 +103,8 @@ class ConvertInput(object):
 
 def main():
    
-   ci = ConvertInput(sys.argv[1], sys.argv[2], sys.argv[3])
-   ci.run()
+   # ci = ConvertInput(sys.argv[1], sys.argv[2], sys.argv[3])
+   # ci.run()
 
    user = 'vjain'
    passwd = 'vj@in123'
@@ -105,9 +112,9 @@ def main():
     # port = '5432'
    database = 'twitter_urls'
 
-   bi = BatchInput(sys.argv[2])
+   bi = BatchInput(sys.argv[1])
    conn = bi.setup(database, user, passwd)
-   bi.run(conn)
+   bi.run_urls(conn)
 
 if __name__ == "__main__":
    sys.exit(main())

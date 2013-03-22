@@ -4,10 +4,11 @@ import sys
 import json
 import time
 import datetime
+import urllib
 import calendar
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, create_engine, types, DECIMAL
+from sqlalchemy import Table, Column, Integer, Boolean, String, MetaData, ForeignKey, create_engine, types, DECIMAL
 Base = declarative_base()    
 
 class SetUp(object):
@@ -59,27 +60,26 @@ def convert_timestr(date_str):
     t_stamp = time.strptime(tp, '%a %b %d %H:%M:%S %Y')
     return calendar.timegm(t_stamp)
     
-# class Base():
-# why doesn't this work ? 
-# Base = declarative_base()    
-
 class UrlRecords(Base):
     """ creates a class to represent the url records table """
 
-    __tablename__ = 'url_records'
+    __tablename__ = 'url_recs_upd'
     
-    exp_url = Column(String, primary_key=True) # exp url
+    id = Column(String, primary_key=True) # exp url
+    num_redir = Column(Integer)
+    exp_url = Column(String)
     tco_url = Column(String)
     creation_tstamp = Column(DECIMAL)
     coordinates = Column(String)
 
-    def __init__(self, exp_url, tco_url, creation_tstamp,  num_redir, coordinates):
-        self.exp_url = exp_url
-        self.tco_url = tco_url
-        self.creation_tstamp = creation_tstamp
-        self.coordinates = coordinates
-        self.num_redir = num_redir
-                             
+class BaseUrls(Base):
+    """ creates a class to reprsent the original url table"""
+    __tablename__ = 'urls'
+    id = Column(Integer, primary_key=True)
+    exp_url = Column(String)
+    resolved = Column(Boolean)
+    
+
 class UpdateData(object):
     """ Updates data into the database"""
 
@@ -113,9 +113,11 @@ class UpdateData(object):
 
                 rec = Session.query(UrlRecords).filter(
                     UrlRecords.exp_url == l['expanded_url']).update(
-                    {'num_redir': l['num_redirects']}, 
-                    'redir_list':json.dumps(l['redirect_list']))
-                                                                                                        
+                    {
+                        'num_redir': l['num_redirects'], 
+                        'redir_list':json.dumps(l['redirect_list'])
+                    }                                        
+                    )
                 # session.add(rec)
                 count += 1
         session.commit()
@@ -149,13 +151,6 @@ class PublishData(object):
                 if 'geo' in l:
                     geo = l['geo']
                     coods = str(geo['coordinates'])
-                #     print coods
-                    # res = session.execute(
-                    #     url_records.insert(), [
-                    #         {'exp_url':l['expanded_url'], 'tco_url':l['twit_url'],
-                    #          'creation_tstamp':tstamp, 'num_redir':0,
-                    #          'coordinates':coods}
-                    #         ])
                     session.query(UrlRecords).filter_by(exp_url = l['expanded_url']).all()
                     
                     rec = UrlRecords(exp_url = l['expanded_url'], 
@@ -165,18 +160,73 @@ class PublishData(object):
                     session.add(rec)
                     count += 1
                 else:
-                    # res = session.execute(
-                    #     url_records.insert(), [
-                    #         {'exp_url':l['expanded_url'], 'tco_url':l['twit_url'],
-                    #          'creation_tstamp':tstamp, 'num_redir':0}
-                    #         ])
                     rec = UrlRecords(exp_url = l['expanded_url'], tco_url = l['twit_url'],
                                      creation_tstamp = tstamp, num_redir = 0, coordinates = "")
                     session.add(rec)                    
                     count += 1
         session.commit()
-    
-            
+
+class QueryData(object):
+    ''' This class serve as a custom querier to the 
+    postgres database using the sqlalchemy API'''
+
+    def __init__(self, conn):
+        self.conn = conn
+        Session = sessionmaker(bind=self.conn)
+        self.session = Session()
+
+    def execute(self):
+        res = self.session.query(UrlRecords).filter(UrlRecords.num_redir>= '5').all()
+        return res
+
+    def new_urls(self):
+        count = 0
+        count2 = 0
+        """ Misc code to create new urls table with only the domain name
+        instead of the full url's, source url's are taken from the url_recs_upd table"""
+        # res = self.session.query(UrlRecords).filter_by().yield_per(100000)
+        res = self.session.query(UrlRecords.exp_url).all()
+        # for i in res:
+        #     count += 1
+        #     if count % 100000 == 0:
+        #         print "-------------------count", count, "---------------------------"
+        #     if count2 % 100000 == 0:
+        #         print "-------------------co", count2, "---------------------------"
+
+        #     exp_url = i.exp_url
+
+        #     exp_url = urllib.unquote_plus(exp_url)
+
+        #     # some url's don't have http://
+        #     if exp_url.find('http://') == -1:
+        #         exp_url = 'http://'+exp_url
+
+        #     exp_url = exp_url[exp_url.find(':')+1:]
+
+        #     try:
+        #         host,path = urllib.splithost(exp_url)
+        #         host, port = urllib.splitport(host)
+        #     except:
+        #         print "Error in splithost,port:", exp_url
+                
+        #     if self.session.query(BaseUrls).filter(BaseUrls.exp_url == host).all():
+        #         # print "Already present", host
+        #         continue
+
+        #     # for j in l:
+        #     #     print j.exp_url
+        #     #     continue
+        #     count2 += 1
+        #     if i.num_redir:
+        #         entry = BaseUrls(exp_url=host,resolved=True)
+        #         # print "###############################Entered in DB:", host
+        #     else:
+        #         entry = BaseUrls(exp_url=host,resolved=False)
+        #         # print "################################Entered in DB:", host
+        #     self.session.add(entry)
+        self.session.commit()
+
+
 def main():
     print 'started'
     user = 'vjain'
@@ -191,16 +241,23 @@ def main():
 
     db = SetUp(user, passwd, host, port, database)
     db_conn = db.run()
+    qi = QueryData(db_conn)
+    l = qi.new_urls()
+    # l = qi.execute()
     
-    create_db = CreateDb(db_conn)
+    # for i in l:
+    #     print i.exp_url,i.num_redir
+
+    # create_db = CreateDb(db_conn)
     
-    if create_db.run():
-        print "True"
-        p_data = PublishData(db_conn, sys.argv[1])
-        p_data.publish()
+    # if create_db.run():
+    #     print "True"
+    #     p_data = PublishData(db_conn, sys.argv[1])
+    #     p_data.publish()
 
     # db = SetUp(user, passwd, host, port, database)
     # db.run():
+
             
 if __name__ == "__main__":
     sys.exit(main())
