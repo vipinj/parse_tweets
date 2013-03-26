@@ -230,8 +230,9 @@ class ParseTwitter(object):
         #     pass
                                    
 
-def statistics(total_q, indb_q, todb_q):
+def statistics(inputq, total_q, indb_q, todb_q):
     print "URLS:\tTotal\tIN DB\t TO DB\n"
+    # while not inputq.empty():
     while True:
         # if not total_q.empty():
         with lock:
@@ -271,10 +272,10 @@ class FileIoUpd(object):
         procs = []
         while not self.inputq.empty():
             
-            # stats = threading.Thread(target = statistics, 
-            #                          args = (total_q, indb_q, todb_q))
-            stats = multiprocessing.Process(target = statistics, 
-                                     args = (total_q, indb_q, todb_q,))
+            stats = threading.Thread(target = statistics, 
+                                     args = (total_q, indb_q, todb_q))
+            # stats = multiprocessing.Process(target = statistics, 
+            #                          args = (total_q, indb_q, todb_q,))
             stats.start()
             
             for i in range(1,8):
