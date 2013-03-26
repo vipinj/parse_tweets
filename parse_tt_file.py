@@ -4,15 +4,15 @@ import sys
 
 class ParseTwitter(object):
     """ Takes a json file, and outputs the date, url, and geolocation if any
-    to a queue"""
-    def __init__(self, jsonf, outq):
+    to a file, instead of the queue """
+    def __init__(self, jsonf, outf):
         self.json = open(jsonf, 'r')
-        self.outq = outq
+        self.outf = open(outf, 'w')
         self.count = 0
 
     def __del__(self):
         self.json.close()
-        # self.op.close()
+        self.outf.close()
         
     def parse(self):
         #try:
@@ -22,10 +22,10 @@ class ParseTwitter(object):
                 if not len(line):
                     break
             except:
-                 continue
+                continue
         # for line in self.json:
             self.count += 1
-            if not self.count % 100000:
+            if not self.count % 10:
                 print (self.count)
             try:
                 rec = json.loads(line)
@@ -46,7 +46,7 @@ class ParseTwitter(object):
                             json_rec['geo'] = rec['geo']
                             # print ( rec['geo'], file = self.op)
                         json_dump = json.dumps(json_rec)
-                        
+                        print (json_rec['expanded_url'], end='\n', file = self.outf)
                         # print (json_dump, end="\n", file = self.op)
                     else:
                         if 'media' in rec['entities']:
@@ -62,7 +62,8 @@ class ParseTwitter(object):
                                 if rec['geo']:
                                     json_rec['geo'] = rec['geo']
                             json_dump = json.dumps(json_rec)
-                            print (json_dump, end="\n", file = self.op)
+                        print (json_rec['expanded_url'], end='\n', file = self.outf)
+                            
                             # print (rec['geo'], end="\n", file = self.op)
                 else:
                     # pass
