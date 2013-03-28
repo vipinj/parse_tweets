@@ -14,8 +14,9 @@ from threading import Thread
 from collections import deque
 from multiprocessing import Queue, Process
 from sqlalchemy.orm import Session, sessionmaker
-lock = threading.Lock()
-
+lock1 = threading.Lock() # total queue
+lock2 = threading.Lock() # indb queue
+lock3 = threading.Lock() # todb queue
 # class RedirectionHandlerPy3(urllib.request.HTTPRedirectHandler):
 #     """ Overrides RedirectionHandler to output 
 #     the number of redirects"""
@@ -53,18 +54,20 @@ def redirect_urls(inputq, total_q, indb_q, todb_q):
     Session = sessionmaker(bind=db_conn) 
     session = Session()
 
-    if not inputq.empty():
+    print "rurls", inputq.qsize()
+    while not inputq.empty():
         item = inputq.get()
 
-        with lock:
+        with lock1:
         # if not total_q.empty():
             total_q.put(total_q.get() + 1)
-            
+        print "sent"
         rec = json.loads(item)
         tc_url = rec['twit_url']
         ex_url = rec['expanded_url']
-        with open("log",'a') as f:
-            f.write("%s\n" %ex_url)
+        # print ex_url
+        # with open("log",'a') as f:
+        #     f.write("%s\n" %ex_url)
 
         try:
             ex_url = ex_url.lower()  # Expect the encoding errors here, unicode string
@@ -91,26 +94,27 @@ def redirect_urls(inputq, total_q, indb_q, todb_q):
         if not in_domains:
             domain = sqa.Domains(domain_name=dom)
             session.add(domain)
-            # print "Added in Domains"
+            print "Added in Domains"
 
         if not in_exp_urls:
             url_rec = sqa.ExpUrls(exp_url=ex_url,tco_url=tc_url)
             session.add(url_rec)
-            # print "Added in exp_urls"
+            print "Added in exp_urls"
         else:
             db_record = session.query(sqa.UrlRecords.num_redir).filter(sqa.UrlRecords.exp_url == ex_url).all()
             # db_record = session.query(sqa.ExpUrls).filter(sqa.ExpUrls.exp_url == ex_url).all()
-            # print ex_url, db_record
+            print ex_url, db_record
             # sys.exit()
             if db_record:
                 print "Already Present ", ex_url
-                if not indb_q.empty():
+                # if not indb_q.empty():
+                with lock2:
                     indb_q.put(indb_q.get() + 1)
                 sys.exit()
                 # self.terminate()
 
         # request = urllib.request.Request(ex_url)
-        print "Processing ", ex_url
+        # print "Processing ", ex_url
         request = urllib2.Request(ex_url)
         redir_list = []
         redirect_list = []
@@ -125,10 +129,11 @@ def redirect_urls(inputq, total_q, indb_q, todb_q):
             num_redirects = len(redir_list)
             for i in range(0,len(redir_list)):
                 redirect_list.append(urllib.quote_plus(redir_list[i][1].encode('iso-8859-1')))
-                
+
             redir_str = '#'.join(redirect_list)
             # print ex_url, redirect_list
-            if not todb_q.empty():
+            # if not todb_q.empty():
+            with lock3:
                 todb_q.put(todb_q.get() + 1)
             # Have the entry, fill the database and the corresponding tables
             if 'geo' in rec:
@@ -147,7 +152,7 @@ def redirect_urls(inputq, total_q, indb_q, todb_q):
                                         creation_tstamp = tstamp, 
                                         num_redir = num_redirects,
                                         redir_list = redir_str)
-                
+
                 # print "########## Written to db##############", ex_url
                 session.add(db_rec)
     
@@ -159,6 +164,7 @@ class ParseTwitter(object):
     """ Takes a json file, and outputs the date, url, and geolocation if any"""
     
     def __init__(self, jsonf, errfile, outq):
+        # print "call1"
         self.json = open(jsonf, 'r')
         self.errf = open(errfile,'w')
         self.outq = outq
@@ -168,18 +174,22 @@ class ParseTwitter(object):
         self.json.close()
         self.errf.close()
         
-    def parse(self):
-        #try:
+    def run(self):
+        print "beign coa"
         while True:
-            try:
-                line = self.json.readline()
-                if not len(line):
-                    break
-            except:
-                continue
-        # for line in self.json:
+            # try:
+            #     line = self.json.readline()
+            #     if not len(line):
+            #         break
+            # except:
+            #     continue
             self.count += 1
+            line = self.json.readline()
+            if not len(line):
+                break
+            
             if self.count % 10 == 0:
+                # pass
                 print self.count
             try:
                 rec = json.loads(line)
@@ -200,7 +210,9 @@ class ParseTwitter(object):
                             json_rec['geo'] = rec['geo']
                             # print ( rec['geo'], file = self.op)
                         json_dump = json.dumps(json_rec)
-                        self.outq.put(json_dump)                     
+                        if not self.outq.full():
+                            print self.outq.qsize()
+                            self.outq.put(json_dump)                     
                         # print "Entering ", json_rec['expanded_url']
                         # print (json_dump, end="\n", file = self.op)
                     else:
@@ -218,8 +230,11 @@ class ParseTwitter(object):
                                     json_rec['geo'] = rec['geo']
                             json_dump = json.dumps(json_rec)
                             # print "Entering ", json_rec['expanded_url']
-                            self.outq.put(json_dump)
-                            # print (rec['geo'], end="\n", file = self.op)
+                            if not self.outq.full():
+                                # print self.outq.qsize()
+                                self.outq.put(json_dump)
+                            # print "en2:", json_rec['expanded_url']
+                # print (rec['geo'], end="\n", file = self.op)
                 else:
                     self.errf.write('%s' %(rec))
                     # pass
@@ -230,34 +245,55 @@ class ParseTwitter(object):
         #     pass
                                    
 
-def statistics(inputq, total_q, indb_q, todb_q):
-    print "URLS:\tTotal\tIN DB\t TO DB\n"
-    # while not inputq.empty():
-    while True:
-        # if not total_q.empty():
-        with lock:
-            tq = total_q.get()
-            total_q.put(tq)
+class Statistics(threading.Thread):
 
-        if not indb_q.empty():
-            inq = indb_q.get()
-            indb_q.put(inq)
+    def __init__(self, inputq, total_q, indb_q, todb_q):
+        self.total_q = total_q
+        self.inputq = inputq
+        self.indb_q = indb_q
+        self.todb_q = todb_q
 
-        if not todb_q.empty():
-            toq = todb_q.get()
-            todb_q.put(toq)
+    def run(self):
+        while not inputq.empty():
+            print "URLS:\tTotal\tIN DB\t TO DB\n"
+            # while not inputq.empty():
+            # while True:
+            with lock1:
+                tq = total_q.get()
+                total_q.put(tq)
 
-        print '\t'+str(tq)+'\t'+str(inq)+'\t'+str(toq)
+                # if not indb_q.empty():
+            with lock2:
+                inq = indb_q.get()
+                indb_q.put(inq)
 
-        time.sleep(10)
+            # if not todb_q.empty():
+            with lock3:
+                toq = todb_q.get()
+                todb_q.put(toq)
+
+            print '\t'+str(tq)+'\t'+str(inq)+'\t'+str(toq)
+            time.sleep(10)
+        if inputq.empty():
+            sys.exit(0)
+        # if inputq.empty():
+        #     sys.exit(0)
 
 class FileIoUpd(object):
     """ Makes an input queue for input url records
     """
 
-    def __init__(self, inputq):
-        # self.inputf = codecs.open(inputf, 'r', encoding = 'UTF-8')
+    def __init__(self, jsonf, errf, inputq):
+        self.jsonf = jsonf
+        self.errf = errf
+        # self.outq = outq
+        self.count = 0
+# self.inputf = codecs.open(inputf, 'r', encoding = 'UTF-8')
         self.inputq = inputq
+
+    # def __del__(self):
+    #     self.jsonf.close()
+    #     self.errf.close()
 
     def run(self):
 
@@ -269,23 +305,44 @@ class FileIoUpd(object):
         indb_q.put(0)
         todb_q.put(0)
 
-        procs = []
-        while not self.inputq.empty():
-            
-            stats = threading.Thread(target = statistics, 
-                                     args = (total_q, indb_q, todb_q))
-            # stats = multiprocessing.Process(target = statistics, 
-            #                          args = (total_q, indb_q, todb_q,))
-            stats.start()
-            
-            for i in range(1,8):
+        procs_out = []
+        
+        # producer_thr = threading.Thread(
+        #     target=ParseTwitter, args = 
+        #     (self.jsonf, self.errf, self.inputq))
+        
+        # producer_thr.start()
+        
+        p_t = ParseTwitter(self.jsonf, self.errf, self.inputq)
+        p_t.run()
+        # while not self.inputq.empty():
+        for i in range(1,8):
+            # producer_thr = threading.Thread(
+            #     target=ParseTwitter, args = 
+            #     (self.jsonf, self.errf, self.inputq))
+
+            # procs_in.append(producer_thr)
+            # producer_thr.start()
+            if not self.inputq.empty():
                 p = multiprocessing.Process(target = redirect_urls,
                                             args = (self.inputq, total_q, indb_q, todb_q,))
-                procs.append(p)
+                procs_out.append(p)
                 p.start()
 
-            for p in procs:
-                p.join()
+        for p in procs_out:
+            p.join()
+
+        # while not self.inputq.empty():
+            # print "qsize", self.inputq.qsize()
+        stats = threading.Thread(target = Statistics, 
+                                     args = (self.inputq, total_q, indb_q, todb_q))
+            # stats = multiprocessing.Process(target = statistics, 
+            #                          args = (self.inputq, total_q, indb_q, todb_q,))
+        stats.start()
+        stats.join()
+
+        # self.inputq.join()
+        # producer_thr.join()
         
 
 class FileIo(object):
@@ -340,13 +397,20 @@ class TestRedirect(object):
             print redirect_list
         
 def main():
+
+    db_conn = sqa.connect_db()
+    Session = sessionmaker(bind=db_conn) 
+    session = Session()
     
-    in_queue = multiprocessing.Queue(1000)
-    pt = ParseTwitter(sys.argv[1], sys.argv[2], in_queue)
-    pt.parse()
-    url_dump = FileIoUpd(in_queue)
+    count1 = session.query(sqa.UrlRecords).count()
+    in_queue = multiprocessing.Queue()
+    # pt = ParseTwitter(sys.argv[1], sys.argv[2], in_queue)
+    # pt.parse()
+    url_dump = FileIoUpd(sys.argv[1], sys.argv[2], in_queue)
     url_dump.run()
 
+    count2 = session.query(sqa.UrlRecords).count()
+    print "Records Added: ", count2-count1
     # redirects = RedirectUrls(sys.argv[1],sys.argv[2])
     # redirects.run()
     # redirects = TestRedirect(sys.argv[1])
