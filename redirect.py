@@ -12,24 +12,27 @@ import threading
 import sqlalc_utilities as sqa
 from threading import Thread
 from collections import deque
-from multiprocessing import  Process
+from multiprocessing import  Process, Lock, Array
 from multiprocessing import JoinableQueue as Queue
 from sqlalchemy.orm import Session, sessionmaker
 # from sqlalchem.orm import scoped_session
 import logging
 
+# lock1 = threading.RLock() # total queue
+# lock2 = threading.RLock() # indb queue
+# lock3 = threading.RLock() # todb queue
+# lock4 = threading.Rlock()
 
+lock1 = Lock()
+lock2 = Lock()
+lock3 = Lock()
+lock4 = Lock()
 
-lock1 = threading.Lock() # total queue
-lock2 = threading.Lock() # indb queue
-lock3 = threading.Lock() # todb queue
-
-
-
-logging.basicConfig(level=logging.ERROR, filename='debug.log',
+logging.basicConfig(level=logging.DEBUG, filename='debug.log',
                     format='%(asctime)s %(levelname)s %(thread)d: %(process)d %(lineno)d, %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S')
-logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
+
 # class RedirectionHandlerPy3(urllib.request.HTTPRedirectHandler):
 #     """ Overrides RedirectionHandler to output 
 #     the number of redirects"""
@@ -67,21 +70,18 @@ def redirect_urls(inputq, total_q, indb_q, todb_q):
     Session = sessionmaker(bind=db_conn) 
     session = Session()
 
-    # print "rurls", inputq.qsize()
-    # while not inputq.empty():
     while True:
-        try:
-            item = inputq.get_nowait()
-        except Exception, e:
-            print "Ye", e
-            session.close()
-            return
+        with lock4:
+            try:
+                item = inputq.get_nowait()
+            except Exception, e:
+                print "Empty exception", e
+                session.close()
+                # return
+                sys.exit(0)
 
-        # print "qsize", inputq.qsize()
         with lock1:
-        # if not total_q.empty():
             total_q.put(total_q.get() + 1)
-        # print "sent"
         try:
             rec = json.loads(item)
         except:
@@ -89,15 +89,11 @@ def redirect_urls(inputq, total_q, indb_q, todb_q):
         tc_url = rec['twit_url']
         ex_url = rec['expanded_url']
         print "item", ex_url
-        # print "queue", ex_url
-        # with open("log",'a') as f:
-        #     f.write("%s\n" %ex_url)
 
         try:
             ex_url = ex_url.lower()  # Expect the encoding errors here, unicode string
         except Exception, e:
             logging.debug("terminating %s" %exp_url)
-            # print "Terminating: ", exp_url, e
             inputq.task_done()
             continue
             # self.terminate()
@@ -112,13 +108,14 @@ def redirect_urls(inputq, total_q, indb_q, todb_q):
             # exp_url = http://biebervideo55.tk?=irgvhrxr, no / at the end, abnormal urls
             if dom.find('?') != -1:
                 dom = dom.split('?')[0]
-        print "lexical passed"
+        logging.debug('lexical passed  %s' %dom)        
+        print "lexical passed", dom
         # Check whether it exists in the database
-        # logging.debug('Querying  %s' %dom)        
-        print "lexical passed2"
+        logging.debug('Querying1  %s' %dom)        
         in_domains = session.query(sqa.Domains).filter(sqa.Domains.domain_name == dom).all()
+        print "lexical passed2"
         logging.debug('Query Done %s' %dom)
-        logging.debug('Querying %s' %dom)
+        logging.debug('Querying2 %s' %dom)
         in_exp_urls = session.query(sqa.ExpUrls).filter(sqa.ExpUrls.exp_url == ex_url).all()
         logging.debug('Query Done %s' %dom)
         if not in_domains:
@@ -292,39 +289,78 @@ class ParseTwitter(object):
         #     pass
                                    
 
-class Statistics(threading.Thread):
+# class Statistics(threading.Thread):
 
-    def __init__(self, inputq, total_q, indb_q, todb_q):
-        # print "init called"
-        logging.debug(" stats init called")
-        self.total_q = total_q
-        self.inputq = inputq
-        self.indb_q = indb_q
-        self.todb_q = todb_q
-        threading.Thread.__init__(self)
+#     def __init__(self, inputq, total_q, indb_q, todb_q):
+#         # print "init called"
+#         logging.debug(" stats init called")
+#         self.total_q = total_q
+#         self.inputq = inputq
+#         self.indb_q = indb_q
+#         self.todb_q = todb_q
+#         threading.Thread.__init__(self)
 
-    def run(self):
+#     def run(self):
+#         logging.debug(" stats run called")
+#         with open("stats.log",'a') as f:
+#             # while not self.inputq.empty():
+#             while True:
+#                 print  >>f, "URLS:\tTotal\tIN DB\t TO DB\n"
+#                 with lock1:
+#                     tq = self.total_q.get()
+#                     self.total_q.put(tq)
+
+#                     # if not indb_q.empty():
+#                 with lock2:
+#                     inq = self.indb_q.get()
+#                     self.indb_q.put(inq)
+
+#                 # if not todb_q.empty():
+#                 with lock3:
+#                     toq = self.todb_q.get()
+#                     self.todb_q.put(toq)
+
+#                 print >>f, '\t'+str(tq)+'\t'+str(inq)+'\t'+str(toq)
+#                 f.flush()
+#                 time.sleep(10)
+#                 logging.debug("stats finished")
+
+
+# class Statistics(threading.Thread):
+
+#     def __init__(self, inputq, total_q, indb_q, todb_q):
+#         # print "init called"
+#         logging.debug(" stats init called")
+#         self.total_q = total_q
+#         self.inputq = inputq
+#         self.indb_q = indb_q
+#         self.todb_q = todb_q
+#         threading.Thread.__init__(self)
+
+def stats_run(total_q, indb_q, todb_q):
         logging.debug(" stats run called")
         with open("stats.log",'a') as f:
             # while not self.inputq.empty():
             while True:
                 print  >>f, "URLS:\tTotal\tIN DB\t TO DB\n"
                 with lock1:
-                    tq = self.total_q.get()
-                    self.total_q.put(tq)
+                    tq = total_q.get()
+                    total_q.put(tq)
 
                     # if not indb_q.empty():
                 with lock2:
-                    inq = self.indb_q.get()
-                    self.indb_q.put(inq)
+                    inq = indb_q.get()
+                    indb_q.put(inq)
 
                 # if not todb_q.empty():
                 with lock3:
-                    toq = self.todb_q.get()
-                    self.todb_q.put(toq)
+                    toq = todb_q.get()
+                    todb_q.put(toq)
 
                 print >>f, '\t'+str(tq)+'\t'+str(inq)+'\t'+str(toq)
-
+                f.flush()
+                time.sleep(10)
+                logging.debug("stats finished")
 
 class FileIoUpd(object):
     """ Makes an input queue for input url records
@@ -363,10 +399,15 @@ class FileIoUpd(object):
 
         print self.inputq.qsize()
 
-        stats = Statistics(self.inputq, total_q, indb_q, todb_q)
-        stats.daemon = True
-        stats.start()
+        # stats = Statistics(self.inputq, total_q, indb_q, todb_q)
+        # stats.daemon = True
+        # stats.start()
           
+        stats_thr = threading.Thread(target=stats_run,
+                                     args = (total_q,indb_q, todb_q))
+        stats_thr.daemon = True
+        stats_thr.start()
+        
         procs_out = [multiprocessing.Process(target = 
                                              redirect_urls,
                                              args = (self.inputq,
@@ -439,7 +480,7 @@ def main():
     
     count1 = session.query(sqa.UrlRecords).count()
     session.close()
-    # in_queue = multiprocessing.Queue()
+
     in_queue = Queue()
     # pt = ParseTwitter(sys.argv[1], sys.argv[2], in_queue)
     # pt.parse()

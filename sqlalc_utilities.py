@@ -9,6 +9,7 @@ import calendar
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Table, Column, Integer, Boolean, String, MetaData, ForeignKey, create_engine, types, DECIMAL
+from sqlalchemy.pool import NullPool
 Base = declarative_base()    
 
 class SetUp(object):
@@ -23,7 +24,7 @@ class SetUp(object):
 
     def run(self):
         conn_string = 'postgresql://'+str(self.user)+':'+str(self.passwd)+'@'+str(self.host)+':'+str(self.port)+'/'+str(self.db)
-        db = create_engine(conn_string)
+        db = create_engine(conn_string, poolclass=NullPool)
         return db
 
 class CreateDb(object):
